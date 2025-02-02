@@ -14,31 +14,31 @@ HDD_SENSORS_CHECK_INTERVAL = 60   # seconds
 # CPU temperature thresholds: [ [temp_threshold, fan_value], ... ]
 #   If CPU temp >= temp_threshold, fan_value is applied.
 CPU_THRESHOLDS = [
-    [0,   0],
+    [1,   1],
     [47,  1],
-    [48,  2],
-    [49,  3],
-    [50,  4],
-    [51,  5],
-    [52,  6],
-    [53,  7],
-    [54,  8],
-    [55,  10],
-    [60,  20],
-    [65,  25],
-    [70,  35],
-    [75,  100],
+    [48,  1],
+    [49,  1],
+    [50,  1],
+    [51,  1],
+    [52,  1],
+    [53,  1],
+    [54,  3],
+    [55,  3],
+    [60,  3],
+    [65,  3],
+    [70,  3],
+    [75,  5],
 ]
 
 # HDD temperature thresholds: [ [temp_threshold, fan_value], ... ]
 #   If HDD temp >= temp_threshold, fan_value is applied.
 HDD_THRESHOLDS = [
-    [0,   0],
-    [55,  10],
-    [58,  20],
-    [60,  30],
-    [65,  50],
-    [75,  100],
+    [1,   1],
+    [25,  1],
+    [38,  1],
+    [45,  1],
+    [55,  3],
+    [65,  5],
 ]
 
 # List of HDD devices you want to monitor. Adjust as needed.
@@ -181,7 +181,7 @@ def check_hdds():
     update_final_fan_speed()
 
     # Schedule the next HDD check
-    scheduler.enter(HDD_SENSORS_CHECK_INTERVAL, 2, check_hdds)s)
+    scheduler.enter(HDD_SENSORS_CHECK_INTERVAL, 2, check_hdds)
 
 def main():
     print("[START] Starting scheduled temperature monitoring...")
