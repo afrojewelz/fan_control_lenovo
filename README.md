@@ -6,7 +6,7 @@ Should not work on other servers ,lenovo oem epyc 7002/7003 <120W only
 
 
 ## service setup
-root@vm241:/etc/systemd/system# cat cpu_temp_monitor.service 
+root@neopic:/etc/systemd/system# cat cpu_temp_monitor.service 
 [Unit]
 Description=CPU Temperature Monitor Service
 After=network.target
