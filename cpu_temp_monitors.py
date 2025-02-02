@@ -83,20 +83,20 @@ def get_cpu_temperature():
         print(f"[ERROR] get_cpu_temperature() -> {e}")
         return None
 
-def get_hdd_temperature(device):
-    """Runs 'smartctl -A <device>' and returns 'Current Drive Temperature' as float, or None."""
+def get_hdd_temperature():
+    """Parses 'tempnvme.sh' output and returns a dictionary with device temperatures."""
     try:
-        output = subprocess.check_output(["smartctl", "-A", device]).decode("utf-8")
-        # Example line: "Current Drive Temperature:     50 C"
-        match = re.search(r"Current Drive Temperature:\s+(\d+)\s*C", output)
-        if match:
-            return float(match.group(1))
-        else:
-            print(f"[WARN] Could not parse temperature for {device}.")
-            return None
+        output = subprocess.check_output(["./tempnvme.sh"]).decode("utf-8")
+        temperatures = {}
+        for line in output.split('\n'):
+            match = re.search(r"(/dev/nvme\d+) - .*Temperature:\s+(\d+)\s+C", line)
+            if match:
+                device, temp = match.groups()
+                temperatures[device] = float(temp)
+        return temperatures
     except Exception as e:
-        print(f"[ERROR] get_hdd_temperature({device}) -> {e}")
-        return None
+        print(f"[ERROR] get_hdd_temperature() -> {e}")
+        return {}
 
 def choose_fan_value(temperature, thresholds):
     """
@@ -160,21 +160,19 @@ def check_cpu():
     # Schedule the next CPU check
     scheduler.enter(CPU_SENSORS_CHECK_INTERVAL, 1, check_cpu)
 
+# Update the check_hdds function to use the new get_hdd_temperature()
 def check_hdds():
-    """
-    Check all HDDs, find the max temp, compute required fan speed,
-    update the global 'hdd_fan_speed', then schedule next check.
-    """
+    """Check all HDDs, find the max temp, compute required fan speed,
+    update the global 'hdd_fan_speed', then schedule next check."""
     global hdd_fan_speed
 
     max_hdd_temp = 0.0
     print("[INFO] Checking HDD temperatures...")
-    for device in HDD_LIST:
-        hdd_temp = get_hdd_temperature(device)
-        if hdd_temp is not None:
-            print(f"[HDD] {device}: {hdd_temp}°C")
-            if hdd_temp > max_hdd_temp:
-                max_hdd_temp = hdd_temp
+    hdd_temperatures = get_hdd_temperature()
+    for device, hdd_temp in hdd_temperatures.items():
+        print(f"[HDD] {device}: {hdd_temp}°C")
+        if hdd_temp > max_hdd_temp:
+            max_hdd_temp = hdd_temp
 
     hdd_fan_speed = choose_fan_value(max_hdd_temp, HDD_THRESHOLDS)
     print(f"[HDD] Max HDD Temp={max_hdd_temp}°C -> hdd_fan_speed={hdd_fan_speed}")
@@ -183,7 +181,7 @@ def check_hdds():
     update_final_fan_speed()
 
     # Schedule the next HDD check
-    scheduler.enter(HDD_SENSORS_CHECK_INTERVAL, 2, check_hdds)
+    scheduler.enter(HDD_SENSORS_CHECK_INTERVAL, 2, check_hdds)s)
 
 def main():
     print("[START] Starting scheduled temperature monitoring...")
