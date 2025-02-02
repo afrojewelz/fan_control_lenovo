@@ -1,7 +1,7 @@
 # fan_control_lenovo
-Lenovo Fan Control for ipmitool on SR655 v3
+Lenovo Fan Control for ipmitool on SR655 v1
 
-Should work on other servers
+Should not work on other servers ,lenovo oem epyc 7002/7003 <120W only
 
 
 
