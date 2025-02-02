@@ -43,18 +43,22 @@ HDD_THRESHOLDS = [
 
 # List of HDD devices you want to monitor. Adjust as needed.
 HDD_LIST = [
-    "/dev/sda",
-    "/dev/sdb",
-    "/dev/sdc",
-    "/dev/sdd",
-    "/dev/sde",
-    "/dev/sdf",
-    "/dev/sdg",
-    "/dev/sdh",
-    "/dev/sdi",
-    "/dev/sdj",
-    "/dev/sdk",
-    "/dev/sdl",
+      "/dev/nvme0",
+      "/dev/nvme1",
+      "/dev/nvme2",
+      "/dev/nvme3",
+    # "/dev/sda",
+    # "/dev/sdb",
+    # "/dev/sdc",
+    # "/dev/sdd",
+    # "/dev/sde",
+    # "/dev/sdf",
+    # "/dev/sdg",
+    # "/dev/sdh",
+    # "/dev/sdi",
+    # "/dev/sdj",
+    # "/dev/sdk",
+    # "/dev/sdl",
 ]
 ###############################################################################
 
@@ -110,11 +114,14 @@ def choose_fan_value(temperature, thresholds):
 def set_fan_speed(fan_speed):
     """
     Construct and run the ipmitool raw command to set the fan speed.
-    ipmitool raw 0x3a 0x07 0xFF <fan_speed> 0x01
+    # auto 0x01 0x00全局 0x01-6 风扇号码 最后0x01-0x64为风扇速度
+    # ipmitool raw 0x3c 0x30 0x00 0x00 0x64  # 设置到 100%  
+    # ipmitool raw 0x3c 0x30 0x01 0x00 0x00  # 可能的自动模式命令
+    ipmitool raw 0x3c 0x30 0x00 0x00 <fan_speed>
     """
     command = [
-        "ipmitool", "raw", "0x3a", "0x07", "0xFF",
-        str(fan_speed), "0x01"
+        "ipmitool", "raw", "0x3c", "0x30", "0x00", "0x00",
+        str(fan_speed)
     ]
     print(f"[INFO] Setting fan speed to {fan_speed} (command: {' '.join(command)})")
     try:
