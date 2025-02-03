@@ -98,7 +98,6 @@ def get_cpu_temperature():
         output = subprocess.check_output(["sensors"]).decode("utf-8")
         match = re.search(r"Tctl:\s*\++([\d.]+)°C", output)
         if match:
-            # print(f"match:"+ output)
             return float(match.group(1))
         else:
             print("[WARN] Could not find Tctl temperature in 'sensors' output.")
@@ -108,16 +107,20 @@ def get_cpu_temperature():
         return None
 
 def get_nic_temperature():
-    """Runs 'sensors' and returns CPU Tctl temp as float, or None."""
+    """Runs 'sensors' and returns NIC temperature as float, or None."""
     try:
         output = subprocess.check_output(["sensors"]).decode("utf-8")
-        match = re.search(r"be2net:\s*\++([\d.]+)°C", output)
-        if match:
-            print(f"match:"+ output)
-            return float(match.group(1))        
-        else:
-            print("[WARN] Could not find be2net temperature in 'sensors' output.")
-            return None       
+        nic_temp = None
+        for nic in ["be2net", "mlx5"]:
+            match = re.search(rf"{nic}-\w+.*\n\s*Adapter: PCI adapter\n\s*(?:sensor0|temp1):\s*\++([\d.]+)°C", output, re.MULTILINE)
+            print(match)
+            if match:
+                nic_temp = float(match.group(1))
+                print(f"[INFO] {nic} temperature: {nic_temp}°C")
+                break
+        if nic_temp is None:
+            print("[WARN] Could not find NIC temperature in 'sensors' output.")
+        return nic_temp
     except Exception as e:
         print(f"[ERROR] get_nic_temperature() -> {e}")
         return None
@@ -127,13 +130,11 @@ def get_hdd_temperature():
     try:
         output = subprocess.check_output(["/root/tempnvme.sh"]).decode("utf-8")
         temperatures = {}
-        for line in output.split('\n'):
-            # print(f"match:"+ output)
-            match = re.search(r"(/dev/nvme\d+) - .*Temperature:\s+(\d+)\s+C", line)
+        for nvme in HDD_LIST:
+            match = re.search(rf"{nvme}.*\n\s*Adapter: PCI adapter\n\s*sensor0:\s*\++([\d.]+)°C", output, re.MULTILINE)
             if match:
-                device, temp = match.groups()
-                temperatures[device] = float(temp)
-                # print(temperatures,device)
+                temp = match.group(1)
+                temperatures[nvme] = float(temp)
         return temperatures
     except Exception as e:
         print(f"[ERROR] get_hdd_temperature() -> {e}")
@@ -155,11 +156,8 @@ def choose_fan_value(temperature, thresholds):
 def set_fan_speed(fan_speed):
     """
     Construct and run the ipmitool raw command to set the fan speed.
-    # auto 0x01 0x00全局 0x01-6 风扇号码 最后0x01-0x64为风扇速度
-    # ipmitool raw 0x3c 0x30 0x00 0x00 0x64  # 设置到 100%  
-    # ipmitool raw 0x3c 0x30 0x01 0x00 0x00  # 可能的自动模式命令
-    ipmitool raw 0x3c 0x30 0x00 0x00 <fan_speed>
     """
+    fan_speed = max(0x01, min(fan_speed, 0x64))
     command = [
         "ipmitool", "raw", "0x3c", "0x30", "0x00", "0x00",
         str(fan_speed)
@@ -173,7 +171,7 @@ def set_fan_speed(fan_speed):
 
 def update_final_fan_speed():
     """
-    Decide the final fan speed (the higher of CPU vs HDD)
+    Decide the final fan speed (the higher of CPU, HDD, and NIC)
     and set it via ipmitool.
     """
     global cpu_fan_speed, hdd_fan_speed, nic_fan_speed
@@ -203,23 +201,23 @@ def check_cpu():
 
 def check_nic():
     """
-    Check CPU temperature, compute required fan speed,
-    update the global 'cpu_fan_speed', then schedule next check.
+    Check NIC temperature, compute required fan speed,
+    update the global 'nic_fan_speed', then schedule next check.
     """
     global nic_fan_speed
 
     nic_temp = get_nic_temperature()
     if nic_temp is not None:
-        cpu_fan_speed = choose_fan_value(cpu_temp, CPU_THRESHOLDS)
-        print(f"[CPU] Temp={cpu_temp}°C -> cpu_fan_speed={cpu_fan_speed}")
+        nic_fan_speed = choose_fan_value(nic_temp, NIC_THRESHOLDS)
+        print(f"[NIC] Temp={nic_temp}°C -> nic_fan_speed={nic_fan_speed}")
     else:
-        print("[WARN] Could not read CPU temperature; leaving cpu_fan_speed as is.")
+        print("[WARN] Could not read NIC temperature; leaving nic_fan_speed as is.")
 
-    # After updating CPU fan speed, decide final fan speed
+    # After updating NIC fan speed, decide final fan speed
     update_final_fan_speed()
 
-    # Schedule the next CPU check
-    scheduler.enter(NIC_SENSORS_CHECK_INTERVAL, 1, check_cpu)    
+    # Schedule the next NIC check
+    scheduler.enter(NIC_SENSORS_CHECK_INTERVAL, 1, check_nic)
 
 # Update the check_hdds function to use the new get_hdd_temperature()
 def check_hdds():
@@ -250,6 +248,7 @@ def main():
     # Schedule initial calls
     scheduler.enter(0, 1, check_cpu)   # Start CPU checks immediately
     scheduler.enter(0, 2, check_hdds)  # Start HDD checks immediately
+    scheduler.enter(0, 3, check_nic)   # Start NIC checks immediately
 
     # Run the scheduler (blocks until the script exits)
     scheduler.run()
