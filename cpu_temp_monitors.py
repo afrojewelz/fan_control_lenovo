@@ -8,37 +8,59 @@ import sched
 ###############################################################################
 # Configuration: All variables here
 ###############################################################################
-CPU_SENSORS_CHECK_INTERVAL = 5    # seconds
+CPU_SENSORS_CHECK_INTERVAL = 5
+NIC_SENSORS_CHECK_INTERVAL = 5    # seconds
 HDD_SENSORS_CHECK_INTERVAL = 60   # seconds
 
 # CPU temperature thresholds: [ [temp_threshold, fan_value], ... ]
 #   If CPU temp >= temp_threshold, fan_value is applied.
 CPU_THRESHOLDS = [
-    [1,   1],
-    [47,  1],
-    [48,  1],
-    [49,  1],
-    [50,  1],
-    [51,  1],
-    [52,  1],
-    [53,  1],
-    [54,  3],
-    [55,  3],
-    [60,  3],
-    [65,  3],
-    [70,  3],
-    [75,  5],
+    [1,   0x01],
+    [27,  0x01],
+    [33,  0x01],
+    [37,  0x03],
+    [42,  0x03],
+    [49,  0x03],
+    [54,  0x05],
+    [59,  0x05],
+    [64,  0x05],
+    [69,  0x06],
+    [73,  0x06],
+    [79,  0x06],
+    [80,  0x07],
+    [87,  0x07],
+]
+
+NIC_THRESHOLDS = [
+    [1,   0x01],
+    [27,  0x01],
+    [33,  0x01],
+    [37,  0x03],
+    [42,  0x03],
+    [49,  0x03],
+    [54,  0x05],
+    [59,  0x05],
+    [64,  0x05],
+    [69,  0x06],
+    [73,  0x06],
+    [79,  0x06],
+    [80,  0x07],
+    [87,  0x07],
 ]
 
 # HDD temperature thresholds: [ [temp_threshold, fan_value], ... ]
 #   If HDD temp >= temp_threshold, fan_value is applied.
 HDD_THRESHOLDS = [
-    [1,   1],
-    [25,  1],
-    [38,  1],
-    [45,  1],
-    [55,  3],
-    [65,  5],
+    [1,   0x01],
+    [22,  0x02],
+    [28,  0x02],
+    [34,  0x02],
+    [37,  0x03],
+    [42,  0x03],
+    [47,  0x04],
+    [51,  0x05],
+    [57,  0x06],
+    [61,  0x07],
 ]
 
 # List of HDD devices you want to monitor. Adjust as needed.
@@ -63,8 +85,9 @@ HDD_LIST = [
 ###############################################################################
 
 # Global variables for storing current fan speed needs
-cpu_fan_speed = 0
-hdd_fan_speed = 0
+cpu_fan_speed = 0x03
+hdd_fan_speed = 0x03
+nic_fan_speed = 0x03
 
 # Create a global scheduler
 scheduler = sched.scheduler(time.time, time.sleep)
@@ -73,8 +96,9 @@ def get_cpu_temperature():
     """Runs 'sensors' and returns CPU Tctl temp as float, or None."""
     try:
         output = subprocess.check_output(["sensors"]).decode("utf-8")
-        match = re.search(r"Tctl:\s*\+([\d.]+)°C", output)
+        match = re.search(r"Tctl:\s*\++([\d.]+)°C", output)
         if match:
+            # print(f"match:"+ output)
             return float(match.group(1))
         else:
             print("[WARN] Could not find Tctl temperature in 'sensors' output.")
@@ -83,16 +107,33 @@ def get_cpu_temperature():
         print(f"[ERROR] get_cpu_temperature() -> {e}")
         return None
 
+def get_nic_temperature():
+    """Runs 'sensors' and returns CPU Tctl temp as float, or None."""
+    try:
+        output = subprocess.check_output(["sensors"]).decode("utf-8")
+        match = re.search(r"be2net:\s*\++([\d.]+)°C", output)
+        if match:
+            print(f"match:"+ output)
+            return float(match.group(1))        
+        else:
+            print("[WARN] Could not find be2net temperature in 'sensors' output.")
+            return None       
+    except Exception as e:
+        print(f"[ERROR] get_nic_temperature() -> {e}")
+        return None
+
 def get_hdd_temperature():
     """Parses 'tempnvme.sh' output and returns a dictionary with device temperatures."""
     try:
-        output = subprocess.check_output(["./tempnvme.sh"]).decode("utf-8")
+        output = subprocess.check_output(["/root/tempnvme.sh"]).decode("utf-8")
         temperatures = {}
         for line in output.split('\n'):
+            # print(f"match:"+ output)
             match = re.search(r"(/dev/nvme\d+) - .*Temperature:\s+(\d+)\s+C", line)
             if match:
                 device, temp = match.groups()
                 temperatures[device] = float(temp)
+                # print(temperatures,device)
         return temperatures
     except Exception as e:
         print(f"[ERROR] get_hdd_temperature() -> {e}")
@@ -103,7 +144,7 @@ def choose_fan_value(temperature, thresholds):
     Given a measured temperature and a threshold list,
     pick a fan value in ascending threshold order.
     """
-    chosen_value = 0
+    chosen_value = 1
     for threshold, fan_val in thresholds:
         if temperature >= threshold:
             chosen_value = fan_val
@@ -135,9 +176,9 @@ def update_final_fan_speed():
     Decide the final fan speed (the higher of CPU vs HDD)
     and set it via ipmitool.
     """
-    global cpu_fan_speed, hdd_fan_speed
-    final_speed = max(cpu_fan_speed, hdd_fan_speed)
-    print(f"[DECISION] CPU={cpu_fan_speed}, HDD={hdd_fan_speed} -> final={final_speed}")
+    global cpu_fan_speed, hdd_fan_speed, nic_fan_speed
+    final_speed = max(cpu_fan_speed, hdd_fan_speed, nic_fan_speed)
+    print(f"[DECISION] CPU={cpu_fan_speed}, HDD={hdd_fan_speed}, NIC={nic_fan_speed} -> final={final_speed}")
     set_fan_speed(final_speed)
 
 def check_cpu():
@@ -159,6 +200,26 @@ def check_cpu():
 
     # Schedule the next CPU check
     scheduler.enter(CPU_SENSORS_CHECK_INTERVAL, 1, check_cpu)
+
+def check_nic():
+    """
+    Check CPU temperature, compute required fan speed,
+    update the global 'cpu_fan_speed', then schedule next check.
+    """
+    global nic_fan_speed
+
+    nic_temp = get_nic_temperature()
+    if nic_temp is not None:
+        cpu_fan_speed = choose_fan_value(cpu_temp, CPU_THRESHOLDS)
+        print(f"[CPU] Temp={cpu_temp}°C -> cpu_fan_speed={cpu_fan_speed}")
+    else:
+        print("[WARN] Could not read CPU temperature; leaving cpu_fan_speed as is.")
+
+    # After updating CPU fan speed, decide final fan speed
+    update_final_fan_speed()
+
+    # Schedule the next CPU check
+    scheduler.enter(NIC_SENSORS_CHECK_INTERVAL, 1, check_cpu)    
 
 # Update the check_hdds function to use the new get_hdd_temperature()
 def check_hdds():
